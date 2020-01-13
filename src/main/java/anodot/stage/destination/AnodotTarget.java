@@ -15,7 +15,7 @@
  */
 package anodot.stage.destination;
 
-import anodot.stage.lib.sample.Errors;
+import anodot.stage.lib.Errors;
 
 import com.streamsets.pipeline.api.Batch;
 import com.streamsets.pipeline.api.Record;
@@ -23,6 +23,7 @@ import com.streamsets.pipeline.api.StageException;
 import com.streamsets.pipeline.api.base.BaseTarget;
 import com.streamsets.pipeline.api.base.OnRecordErrorException;
 import com.streamsets.pipeline.api.impl.Utils;
+import com.streamsets.pipeline.lib.http.HttpProxyConfigBean;
 
 import java.util.Iterator;
 import java.util.List;
@@ -36,6 +37,10 @@ public abstract class AnodotTarget extends BaseTarget {
    * Gives access to the UI configuration of the stage provided by the {@link AnodotDTarget} class.
    */
   public abstract String getResourceUrl();
+
+  public abstract boolean getUseProxy();
+
+  public abstract HttpProxyConfigBean getProxy();
 
   /** {@inheritDoc} */
   @Override

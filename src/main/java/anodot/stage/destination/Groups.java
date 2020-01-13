@@ -21,6 +21,7 @@ import com.streamsets.pipeline.api.Label;
 @GenerateResourceBundle
 public enum Groups implements Label {
   ANODOT("Anodot"),
+  PROXY("Proxy"),
   ;
 
   private final String label;

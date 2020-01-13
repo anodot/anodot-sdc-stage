@@ -19,6 +19,9 @@ import com.streamsets.pipeline.api.ConfigDef;
 import com.streamsets.pipeline.api.ConfigGroups;
 import com.streamsets.pipeline.api.GenerateResourceBundle;
 import com.streamsets.pipeline.api.StageDef;
+import com.streamsets.pipeline.api.ConfigDefBean;
+import com.streamsets.pipeline.lib.http.HttpProxyConfigBean;
+
 @StageDef(
     version = 1,
     label = "Anodot Destination",
@@ -47,4 +50,28 @@ public class AnodotDTarget extends AnodotTarget {
   public String getResourceUrl() {
     return resourceUrl;
   }
+
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.BOOLEAN,
+          label = "Use Proxy",
+          defaultValue = "false",
+          displayPosition = 160,
+          group = "ANODOT"
+  )
+  public boolean useProxy = false;
+
+  /** {@inheritDoc} */
+  @Override
+  public boolean getUseProxy() { return useProxy; }
+
+  @ConfigDefBean(groups = "PROXY")
+  public HttpProxyConfigBean proxy = new HttpProxyConfigBean();
+
+  /** {@inheritDoc} */
+  @Override
+  public HttpProxyConfigBean getProxy() {
+    return proxy;
+  }
+
 }
