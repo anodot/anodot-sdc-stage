@@ -1,0 +1,12 @@
+# Git
+*.rej
+*.orig
+
+# Maven
+target
+
+# IntelliJ
+*.iml
+*.ipr
+*.iws
+.idea
