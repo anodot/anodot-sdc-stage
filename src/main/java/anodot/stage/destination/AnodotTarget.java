@@ -23,7 +23,9 @@ import com.streamsets.pipeline.api.StageException;
 import com.streamsets.pipeline.api.base.BaseTarget;
 import com.streamsets.pipeline.api.base.OnRecordErrorException;
 import com.streamsets.pipeline.api.impl.Utils;
-import com.streamsets.pipeline.lib.http.HttpProxyConfigBean;
+import com.streamsets.pipeline.stage.common.ErrorRecordHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
 import java.util.List;
@@ -31,84 +33,83 @@ import java.util.List;
 /**
  * This target is an example and does not actually write to any destination.
  */
-public abstract class AnodotTarget extends BaseTarget {
+public class AnodotTarget extends BaseTarget {
 
-  /**
-   * Gives access to the UI configuration of the stage provided by the {@link AnodotDTarget} class.
-   */
-  public abstract String getResourceUrl();
+    private static final Logger LOG = LoggerFactory.getLogger(AnodotTarget.class);
+    private final AnodotTargetConfig conf;
+    private final HttpClientCommon httpClientCommon;
+    private ErrorRecordHandler errorRecordHandler;
 
-  public abstract boolean getUseProxy();
+    protected AnodotTarget(AnodotTargetConfig conf) {
+        this.conf = conf;
+        this.httpClientCommon = new HttpClientCommon(conf.client);
+    }
 
-  public abstract HttpProxyConfigBean getProxy();
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    protected List<ConfigIssue> init() {
+        // Validate configuration values and open any required resources.
+        List<ConfigIssue> issues = super.init();
 
-  /** {@inheritDoc} */
-  @Override
-  protected List<ConfigIssue> init() {
-    // Validate configuration values and open any required resources.
-    List<ConfigIssue> issues = super.init();
+        // If issues is not empty, the UI will inform the user of each configuration issue in the list.
+        return issues;
+    }
 
-//    if (getConfig().equals("invalidValue")) {
-//      issues.add(
-//          getContext().createConfigIssue(
-//              Groups.SAMPLE.name(), "config", Errors.SAMPLE_00, "Here's what's wrong..."
-//          )
-//      );
-//    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void destroy() {
+        // Clean up any open resources.
+        super.destroy();
+    }
 
-    // If issues is not empty, the UI will inform the user of each configuration issue in the list.
-    return issues;
-  }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void write(Batch batch) throws StageException {
+        Iterator<Record> batchIterator = batch.getRecords();
 
-  /** {@inheritDoc} */
-  @Override
-  public void destroy() {
-    // Clean up any open resources.
-    super.destroy();
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public void write(Batch batch) throws StageException {
-    Iterator<Record> batchIterator = batch.getRecords();
-
-    while (batchIterator.hasNext()) {
-      Record record = batchIterator.next();
-      try {
-        write(record);
-      } catch (Exception e) {
-        switch (getContext().getOnErrorRecord()) {
-          case DISCARD:
-            break;
-          case TO_ERROR:
-            getContext().toError(record, Errors.SAMPLE_01, e.toString());
-            break;
-          case STOP_PIPELINE:
-            throw new StageException(Errors.SAMPLE_01, e.toString());
-          default:
-            throw new IllegalStateException(
-                Utils.format("Unknown OnError value '{}'", getContext().getOnErrorRecord(), e)
-            );
+        while (batchIterator.hasNext()) {
+            Record record = batchIterator.next();
+            try {
+                write(record);
+            } catch (Exception e) {
+                switch (getContext().getOnErrorRecord()) {
+                    case DISCARD:
+                        break;
+                    case TO_ERROR:
+                        getContext().toError(record, Errors.ANODOT_01, e.toString());
+                        break;
+                    case STOP_PIPELINE:
+                        throw new StageException(Errors.ANODOT_01, e.toString());
+                    default:
+                        throw new IllegalStateException(
+                                Utils.format("Unknown OnError value '{}'", getContext().getOnErrorRecord(), e)
+                        );
+                }
+            }
         }
-      }
-    }
-  }
-
-  /**
-   * Writes a single record to the destination.
-   *
-   * @param record the record to write to the destination.
-   * @throws OnRecordErrorException when a record cannot be written.
-   */
-  private void write(Record record) throws OnRecordErrorException {
-    // This is a contrived example, normally you may be performing an operation that could throw
-    // an exception or produce an error condition. In that case you can throw an OnRecordErrorException
-    // to send this record to the error pipeline with some details.
-    if (!record.has("/someField")) {
-      throw new OnRecordErrorException(Errors.SAMPLE_01, record, "exception detail message.");
     }
 
-    // TODO: write the records to your final destination
-  }
+    /**
+     * Writes a single record to the destination.
+     *
+     * @param record the record to write to the destination.
+     * @throws OnRecordErrorException when a record cannot be written.
+     */
+    private void write(Record record) throws OnRecordErrorException {
+        // This is a contrived example, normally you may be performing an operation that could throw
+        // an exception or produce an error condition. In that case you can throw an OnRecordErrorException
+        // to send this record to the error pipeline with some details.
+        if (!record.has("/someField")) {
+            throw new OnRecordErrorException(Errors.ANODOT_01, record, "exception detail message.");
+        }
+
+        // TODO: write the records to your final destination
+    }
 
 }

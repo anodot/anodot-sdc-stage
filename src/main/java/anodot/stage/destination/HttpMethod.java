@@ -15,30 +15,31 @@
  */
 package anodot.stage.destination;
 
-import com.streamsets.pipeline.api.ConfigDefBean;
-import com.streamsets.pipeline.api.ConfigGroups;
 import com.streamsets.pipeline.api.GenerateResourceBundle;
-import com.streamsets.pipeline.api.StageDef;
-import com.streamsets.pipeline.api.Target;
-import com.streamsets.pipeline.api.base.configurablestage.DTarget;
+import com.streamsets.pipeline.api.Label;
 
-@StageDef(
-        version = 1,
-        label = "Anodot Destination",
-        description = "",
-        icon = "anodot_logo.png",
-        recordsByRef = true,
-        onlineHelpRefUrl = ""
-)
-@ConfigGroups(value = Groups.class)
+/**
+ * Enum for representing possible HTTP methods
+ */
 @GenerateResourceBundle
-public class AnodotDTarget extends DTarget {
+public enum HttpMethod implements Label {
+  GET("GET"),
+  PUT("PUT"),
+  POST("POST"),
+  DELETE("DELETE"),
+  HEAD("HEAD"),
+  PATCH("PATCH"),
+  EXPRESSION("Expression...")
+  ;
 
-    @ConfigDefBean
-    public AnodotTargetConfig conf;
+  private final String label;
 
-    @Override
-    protected Target createTarget() {
-        return new AnodotTarget(conf);
-    }
+  HttpMethod(String label) {
+    this.label = label;
+  }
+
+  @Override
+  public String getLabel() {
+    return label;
+  }
 }

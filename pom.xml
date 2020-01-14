@@ -43,7 +43,7 @@
       <groupId>com.streamsets</groupId>
       <artifactId>streamsets-datacollector-httpcommonlib</artifactId>
       <version>3.8.2</version>
-      <scope>provided</scope>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>

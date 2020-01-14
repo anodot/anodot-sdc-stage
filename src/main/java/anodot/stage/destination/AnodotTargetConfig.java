@@ -15,30 +15,27 @@
  */
 package anodot.stage.destination;
 
-import com.streamsets.pipeline.api.GenerateResourceBundle;
-import com.streamsets.pipeline.api.Label;
+import com.streamsets.pipeline.api.ConfigDef;
 
-@GenerateResourceBundle
-public enum Groups implements Label {
-  HTTP("HTTP"),
-  CREDENTIALS("Credentials"),
-  OAUTH2("OAuth 2"),
-  PROXY("Proxy"),
-  TLS("TLS"),
-  DATA_FORMAT("Data Format"),
-  RESPONSE("Response"),
-  LOGGING("Logging"),
-  ;
+import com.streamsets.pipeline.api.ConfigDefBean;
+import com.streamsets.pipeline.lib.http.JerseyClientConfigBean;
 
-  private final String label;
 
-  private Groups(String label) {
-    this.label = label;
-  }
 
-  /** {@inheritDoc} */
-  @Override
-  public String getLabel() {
-    return this.label;
-  }
+public class AnodotTargetConfig {
+
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.STRING,
+          label = "Anodot URL",
+          description = "Anodot metrics API URL with token",
+          evaluation = ConfigDef.Evaluation.EXPLICIT,
+          displayPosition = 60,
+          group = "HTTP"
+  )
+  public String resourceUrl = "";
+
+  @ConfigDefBean
+  public JerseyClientConfigBean client = new JerseyClientConfigBean();
+
 }
