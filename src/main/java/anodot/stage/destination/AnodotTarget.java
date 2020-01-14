@@ -15,18 +15,30 @@
  */
 package anodot.stage.destination;
 
-import anodot.stage.lib.Errors;
-
+import com.google.common.collect.Lists;
 import com.streamsets.pipeline.api.Batch;
 import com.streamsets.pipeline.api.Record;
 import com.streamsets.pipeline.api.StageException;
 import com.streamsets.pipeline.api.base.BaseTarget;
 import com.streamsets.pipeline.api.base.OnRecordErrorException;
-import com.streamsets.pipeline.api.impl.Utils;
+import com.streamsets.pipeline.lib.generator.DataGenerator;
+import com.streamsets.pipeline.lib.generator.DataGeneratorException;
+import com.streamsets.pipeline.lib.generator.DataGeneratorFactory;
+import com.streamsets.pipeline.lib.http.Errors;
+import com.streamsets.pipeline.stage.common.DefaultErrorRecordHandler;
 import com.streamsets.pipeline.stage.common.ErrorRecordHandler;
+import org.glassfish.jersey.client.oauth1.OAuth1ClientSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.Invocation;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MultivaluedMap;
+import javax.ws.rs.core.StreamingOutput;
+import javax.ws.rs.core.Response;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
@@ -38,7 +50,10 @@ public class AnodotTarget extends BaseTarget {
     private static final Logger LOG = LoggerFactory.getLogger(AnodotTarget.class);
     private final AnodotTargetConfig conf;
     private final HttpClientCommon httpClientCommon;
+    private DataGeneratorFactory generatorFactory;
     private ErrorRecordHandler errorRecordHandler;
+
+    private static final int BATCH_SIZE = 1000;
 
     protected AnodotTarget(AnodotTargetConfig conf) {
         this.conf = conf;
@@ -53,6 +68,18 @@ public class AnodotTarget extends BaseTarget {
         // Validate configuration values and open any required resources.
         List<ConfigIssue> issues = super.init();
 
+        errorRecordHandler = new DefaultErrorRecordHandler(getContext());
+        this.httpClientCommon.init(issues, getContext());
+        if (issues.size() == 0) {
+            conf.dataGeneratorFormatConfig.init(
+                    getContext(),
+                    conf.dataFormat,
+                    Groups.HTTP.name(),
+                    HttpClientCommon.DATA_FORMAT_CONFIG_PREFIX,
+                    issues
+            );
+            generatorFactory = conf.dataGeneratorFormatConfig.getDataGeneratorFactory();
+        }
         // If issues is not empty, the UI will inform the user of each configuration issue in the list.
         return issues;
     }
@@ -63,6 +90,7 @@ public class AnodotTarget extends BaseTarget {
     @Override
     public void destroy() {
         // Clean up any open resources.
+        this.httpClientCommon.destroy();
         super.destroy();
     }
 
@@ -71,45 +99,70 @@ public class AnodotTarget extends BaseTarget {
      */
     @Override
     public void write(Batch batch) throws StageException {
-        Iterator<Record> batchIterator = batch.getRecords();
+        try {
+            Iterator<Record> records = batch.getRecords();
 
-        while (batchIterator.hasNext()) {
-            Record record = batchIterator.next();
-            try {
-                write(record);
-            } catch (Exception e) {
-                switch (getContext().getOnErrorRecord()) {
-                    case DISCARD:
-                        break;
-                    case TO_ERROR:
-                        getContext().toError(record, Errors.ANODOT_01, e.toString());
-                        break;
-                    case STOP_PIPELINE:
-                        throw new StageException(Errors.ANODOT_01, e.toString());
-                    default:
-                        throw new IllegalStateException(
-                                Utils.format("Unknown OnError value '{}'", getContext().getOnErrorRecord(), e)
-                        );
+            while (records.hasNext()) {
+                // Use first record for resolving url, headers, ...
+                Record firstRecord = batch.getRecords().next();
+                MultivaluedMap<String, Object> resolvedHeaders = httpClientCommon.resolveHeaders(conf.headers, firstRecord);
+                Invocation.Builder builder = getBuilder(firstRecord).headers(resolvedHeaders);
+                String contentType = HttpStageUtil.getContentType(resolvedHeaders, conf.dataFormat);
+
+                StreamingOutput streamingOutput = getStreamingOutput(records);
+                Response response = builder.method(conf.httpMethod.getLabel(), Entity.entity(streamingOutput, contentType));
+
+                String responseBody = "";
+                if (response.hasEntity()) {
+                    responseBody = response.readEntity(String.class);
                 }
+                if (conf.client.useOAuth2 && (response.getStatus() == 403 || response.getStatus() == 401)) {
+                    HttpStageUtil.getNewOAuth2Token(conf.client.oauth2, httpClientCommon.getClient());
+                } else if (response.getStatus() < 200 || response.getStatus() >= 300) {
+                    errorRecordHandler.onError(
+                            Lists.newArrayList(batch.getRecords()),
+                            new OnRecordErrorException(
+                                    com.streamsets.pipeline.lib.http.Errors.HTTP_40,
+                                    response.getStatus(),
+                                    response.getStatusInfo().getReasonPhrase() + " " + responseBody
+                            )
+                    );
+                }
+                response.close();
             }
+        } catch (Exception ex) {
+            LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex.toString(), ex);
+            errorRecordHandler.onError(Lists.newArrayList(batch.getRecords()), new StageException(Errors.HTTP_41, ex, ex));
         }
     }
 
-    /**
-     * Writes a single record to the destination.
-     *
-     * @param record the record to write to the destination.
-     * @throws OnRecordErrorException when a record cannot be written.
-     */
-    private void write(Record record) throws OnRecordErrorException {
-        // This is a contrived example, normally you may be performing an operation that could throw
-        // an exception or produce an error condition. In that case you can throw an OnRecordErrorException
-        // to send this record to the error pipeline with some details.
-        if (!record.has("/someField")) {
-            throw new OnRecordErrorException(Errors.ANODOT_01, record, "exception detail message.");
-        }
+    private StreamingOutput getStreamingOutput(Iterator<Record> records) {
+        return outputStream -> {
+            try (DataGenerator dataGenerator = generatorFactory.getGenerator(outputStream)) {
+                int batchRecordsNum = 0;
+                while (records.hasNext() && batchRecordsNum < BATCH_SIZE) {
+                    Record record = records.next();
+                    dataGenerator.write(record);
+                    batchRecordsNum++;
+                }
+                dataGenerator.flush();
+            } catch (DataGeneratorException e) {
+                throw new IOException(e);
+            }
+        };
+    }
 
-        // TODO: write the records to your final destination
+
+    private Invocation.Builder getBuilder(Record record) throws StageException {
+        String resolvedUrl = httpClientCommon.getResolvedUrl(conf.resourceUrl, record);
+        WebTarget target = httpClientCommon.getClient().target(resolvedUrl);
+        // If the request (headers or body) contain a known sensitive EL and we're not using https then fail the request
+        if (httpClientCommon.requestContainsSensitiveInfo(conf.headers, null) &&
+                !target.getUri().getScheme().toLowerCase().startsWith("https")) {
+            throw new StageException(Errors.HTTP_07);
+        }
+        return target.request()
+                .property(OAuth1ClientSupport.OAUTH_PROPERTY_ACCESS_TOKEN, httpClientCommon.getAuthToken());
     }
 
 }

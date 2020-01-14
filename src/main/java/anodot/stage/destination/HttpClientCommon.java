@@ -331,25 +331,6 @@ public class HttpClientCommon {
     return requestHeaders;
   }
 
-  /**
-   * Determines the HTTP method to use for the next request. It may include an EL expression to evaluate.
-   *
-   * @param record Current record to set in context.
-   * @return the {@link HttpMethod} to use for the request
-   * @throws ELEvalException if an expression is supplied that cannot be evaluated
-   */
-  public HttpMethod getHttpMethod(
-      HttpMethod httpMethod,
-      String methodExpression,
-      Record record
-  ) throws ELEvalException {
-    if (httpMethod != HttpMethod.EXPRESSION) {
-      return httpMethod;
-    }
-    RecordEL.setRecordInContext(methodVars, record);
-    return HttpMethod.valueOf(methodEval.eval(methodVars, methodExpression, String.class));
-  }
-
   public Client getClient() {
     return client;
   }
