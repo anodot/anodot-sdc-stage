@@ -22,7 +22,7 @@ import com.streamsets.pipeline.api.GenerateResourceBundle;
 public enum Errors implements ErrorCode {
 
   ANODOT_00("A configuration is invalid because: {}"),
-  ANODOT_01("Specific reason writing record failed: {}"),
+  ANODOT_01("Specific reason writing record failed. Code: {}. Description: {}"),
   ;
   private final String msg;
 

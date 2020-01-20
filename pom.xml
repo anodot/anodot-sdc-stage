@@ -28,6 +28,7 @@
     <slf4j.version>1.7.7</slf4j.version>
     <junit.version>4.12</junit.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <json.version>20180813</json.version>
   </properties>
 
   <dependencies>
@@ -36,13 +37,13 @@
     <dependency>
       <groupId>com.streamsets</groupId>
       <artifactId>streamsets-datacollector-api</artifactId>
-      <version>3.8.2</version>
+      <version>${streamsets.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.streamsets</groupId>
       <artifactId>streamsets-datacollector-httpcommonlib</artifactId>
-      <version>3.8.2</version>
+      <version>${streamsets.version}</version>
       <scope>compile</scope>
     </dependency>
     <dependency>
@@ -56,6 +57,12 @@
       <artifactId>slf4j-log4j12</artifactId>
       <version>${slf4j.version}</version>
       <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.json</groupId>
+      <artifactId>json</artifactId>
+      <version>${json.version}</version>
+      <scope>compile</scope>
     </dependency>
     <!-- end -->
 

@@ -28,8 +28,10 @@ import com.streamsets.pipeline.lib.http.Errors;
 import com.streamsets.pipeline.stage.common.DefaultErrorRecordHandler;
 import com.streamsets.pipeline.stage.common.ErrorRecordHandler;
 import org.glassfish.jersey.client.oauth1.OAuth1ClientSupport;
+import org.json.JSONArray;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.json.JSONObject;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.Invocation;
@@ -109,18 +111,20 @@ public class AnodotTarget extends BaseTarget {
                 Invocation.Builder builder = getBuilder(firstRecord).headers(resolvedHeaders);
                 String contentType = HttpStageUtil.getContentType(resolvedHeaders, conf.dataFormat);
 
-                StreamingOutput streamingOutput = getStreamingOutput(records);
+                ArrayList<Record> currentBatch = new ArrayList<>();
+                StreamingOutput streamingOutput = getStreamingOutput(records, currentBatch);
                 Response response = builder.method(conf.httpMethod.getLabel(), Entity.entity(streamingOutput, contentType));
 
                 String responseBody = "";
                 if (response.hasEntity()) {
                     responseBody = response.readEntity(String.class);
+                    processErrors(responseBody, currentBatch);
                 }
                 if (conf.client.useOAuth2 && (response.getStatus() == 403 || response.getStatus() == 401)) {
                     HttpStageUtil.getNewOAuth2Token(conf.client.oauth2, httpClientCommon.getClient());
                 } else if (response.getStatus() < 200 || response.getStatus() >= 300) {
                     errorRecordHandler.onError(
-                            Lists.newArrayList(batch.getRecords()),
+                            currentBatch,
                             new OnRecordErrorException(
                                     com.streamsets.pipeline.lib.http.Errors.HTTP_40,
                                     response.getStatus(),
@@ -136,13 +140,30 @@ public class AnodotTarget extends BaseTarget {
         }
     }
 
-    private StreamingOutput getStreamingOutput(Iterator<Record> records) {
+    private void processErrors(String responseBody, ArrayList<Record> currentBatch) throws StageException {
+        JSONObject jsonResponse = new JSONObject(responseBody);
+        JSONArray errors = (JSONArray) jsonResponse.get("errors");
+        for (int i = 0; i < errors.length(); i++) {
+            JSONObject error = errors.getJSONObject(i);
+            errorRecordHandler.onError(
+                    new OnRecordErrorException(
+                            currentBatch.get(error.getInt("index")),
+                            anodot.stage.lib.Errors.ANODOT_01,
+                            error.getString("error"),
+                            error.getString("description")
+                    )
+            );
+        }
+    }
+
+    private StreamingOutput getStreamingOutput(Iterator<Record> records, ArrayList<Record> currentBatch) {
         return outputStream -> {
             try (DataGenerator dataGenerator = generatorFactory.getGenerator(outputStream)) {
                 int batchRecordsNum = 0;
                 while (records.hasNext() && batchRecordsNum < BATCH_SIZE) {
                     Record record = records.next();
                     dataGenerator.write(record);
+                    currentBatch.add(record);
                     batchRecordsNum++;
                 }
                 dataGenerator.flush();
