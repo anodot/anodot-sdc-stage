@@ -149,7 +149,7 @@ public class AnodotTarget extends BaseTarget {
                     new OnRecordErrorException(
                             currentBatch.get(error.getInt("index")),
                             anodot.stage.lib.Errors.ANODOT_01,
-                            error.getString("error"),
+                            error.getInt("error"),
                             error.getString("description")
                     )
             );
