@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+            
+    - name: Set vars
+      id: vars
+      run: echo ::set-output name=tag::${GITHUB_REF/refs\/tags\//}
     
     - name: Checkout Streamsets
       uses: actions/checkout@v2.0.0
@@ -48,10 +52,6 @@ jobs:
         release_name: Release ${{ github.ref }}
         draft: false
         prerelease: false
-        
-    - name: Set output
-      id: vars
-      run: echo ::set-output name=tag::${GITHUB_REF/refs\/tags\//}
     
     - name: Upload Release Asset
       id: upload-release-asset 
