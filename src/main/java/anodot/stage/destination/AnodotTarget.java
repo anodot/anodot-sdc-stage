@@ -140,7 +140,7 @@ public class AnodotTarget extends BaseTarget {
         }
     }
 
-    private void processErrors(String responseBody, ArrayList<Record> currentBatch) throws StageException {
+    private void processErrors(String responseBody, List<Record> currentBatch) throws StageException {
         JSONObject jsonResponse = new JSONObject(responseBody);
         JSONArray errors = (JSONArray) jsonResponse.get("errors");
         for (int i = 0; i < errors.length(); i++) {
@@ -156,7 +156,7 @@ public class AnodotTarget extends BaseTarget {
         }
     }
 
-    private StreamingOutput getStreamingOutput(Iterator<Record> records, ArrayList<Record> currentBatch) {
+    private StreamingOutput getStreamingOutput(Iterator<Record> records, List<Record> currentBatch) {
         return outputStream -> {
             try (DataGenerator dataGenerator = generatorFactory.getGenerator(outputStream)) {
                 int batchRecordsNum = 0;
