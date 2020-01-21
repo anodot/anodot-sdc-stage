@@ -3,7 +3,7 @@ name: Java CI
 on:
   push:
     tags:
-    - 'v*'
+    - '*'
 
 jobs:
   build:
@@ -14,7 +14,7 @@ jobs:
             
     - name: Set vars
       id: vars
-      run: echo ::set-output name=tag::${GITHUB_REF/refs\/tags\//}
+      run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\/v/}
     
     - name: Checkout Streamsets
       uses: actions/checkout@v2.0.0
@@ -60,6 +60,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-        asset_path: ./target/anodot-${{ steps.vars.outputs.tag }}.tar.gz
+        asset_path: ./target/anodot-${{ steps.vars.outputs.version }}.tar.gz
         asset_name: SNAPSHOT.tar.gz
         asset_content_type: application/gzip
