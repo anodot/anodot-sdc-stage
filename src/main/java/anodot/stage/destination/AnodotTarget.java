@@ -116,10 +116,6 @@ public class AnodotTarget extends BaseTarget {
                 Response response = builder.method(conf.httpMethod.getLabel(), Entity.entity(streamingOutput, contentType));
 
                 String responseBody = "";
-                if (response.hasEntity()) {
-                    responseBody = response.readEntity(String.class);
-                    processErrors(responseBody, currentBatch);
-                }
                 if (conf.client.useOAuth2 && (response.getStatus() == 403 || response.getStatus() == 401)) {
                     HttpStageUtil.getNewOAuth2Token(conf.client.oauth2, httpClientCommon.getClient());
                 } else if (response.getStatus() < 200 || response.getStatus() >= 300) {
@@ -131,6 +127,9 @@ public class AnodotTarget extends BaseTarget {
                                     response.getStatusInfo().getReasonPhrase() + " " + responseBody
                             )
                     );
+                } else if (response.hasEntity()) {
+                    responseBody = response.readEntity(String.class);
+                    processErrors(responseBody, currentBatch);
                 }
                 response.close();
             }
