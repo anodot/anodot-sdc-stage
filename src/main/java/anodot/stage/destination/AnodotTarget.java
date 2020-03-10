@@ -145,14 +145,24 @@ public class AnodotTarget extends BaseTarget {
         JSONArray errors = (JSONArray) jsonResponse.get("errors");
         for (int i = 0; i < errors.length(); i++) {
             JSONObject error = errors.getJSONObject(i);
-            errorRecordHandler.onError(
+            if (error.has("index")) {
+                errorRecordHandler.onError(
+                        new OnRecordErrorException(
+                                currentBatch.get(error.getInt("index")),
+                                anodot.stage.lib.Errors.ANODOT_01,
+                                error.getInt("error"),
+                                error.getString("description")
+                        )
+                );
+            } else {
+                errorRecordHandler.onError(
                     new OnRecordErrorException(
-                            currentBatch.get(error.getInt("index")),
                             anodot.stage.lib.Errors.ANODOT_01,
                             error.getInt("error"),
                             error.getString("description")
                     )
-            );
+                );
+            }
         }
     }
 
