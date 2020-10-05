@@ -139,4 +139,15 @@ public class AnodotTargetConfig {
 
   @ConfigDefBean(groups = {"RESPONSE"})
   public ToOriginResponseConfig responseConf = new ToOriginResponseConfig();
+
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.STRING,
+          label = "Agent host",
+          description = "Agent host to send offset to",
+//          todo what position?
+          displayPosition = 100,
+          group = "HTTP"
+  )
+  public String agentOffsetUrl = "http://anodot-agent/pipeline-offset/";
 }

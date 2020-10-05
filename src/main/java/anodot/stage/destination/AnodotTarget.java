@@ -39,10 +39,12 @@ import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.StreamingOutput;
 import javax.ws.rs.core.Response;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 /**
  * This target is an example and does not actually write to any destination.
@@ -131,11 +133,29 @@ public class AnodotTarget extends BaseTarget {
                     responseBody = response.readEntity(String.class);
                     processErrors(responseBody, currentBatch);
                 }
+                sendOffsetToAgent(batch.getSourceOffset(), firstRecord.get("tags").getValueAsMap().get("pipeline_id").getValueAsString());
                 response.close();
             }
         } catch (Exception ex) {
             LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex.toString(), ex);
             errorRecordHandler.onError(Lists.newArrayList(batch.getRecords()), new StageException(Errors.HTTP_41, ex, ex));
+        }
+    }
+
+    private void sendOffsetToAgent(String offset, String pipelineId) throws Exception {
+        URLConnection con = new URL(conf.agentOffsetUrl + pipelineId).openConnection();
+        HttpURLConnection http = (HttpURLConnection)con;
+        http.setRequestMethod("POST");
+        http.setDoOutput(true);
+        byte[] out = offset.getBytes(StandardCharsets.UTF_8);
+        http.setFixedLengthStreamingMode(out.length);
+        http.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        http.connect();
+        try (OutputStream os = http.getOutputStream()) {
+            os.write(out);
+        }
+        if (http.getResponseCode() != 200) {
+            throw new Exception("haha");
         }
     }
 
