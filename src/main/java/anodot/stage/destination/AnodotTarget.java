@@ -105,6 +105,12 @@ public class AnodotTarget extends BaseTarget {
     public void write(Batch batch) throws StageException {
         try {
             Iterator<Record> records = batch.getRecords();
+            Record lastRecord = getLastRecord(batch);
+            if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {
+                String pipelineId = lastRecord.get().getValueAsMap().get("tags").getValueAsMap().get("pipeline_id").getValueAsList().get(0).getValueAsString();
+                String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();
+                sendOffsetToAgent(offset, pipelineId);
+            }
 
             while (records.hasNext()) {
                 // Use first record for resolving url, headers, ...
@@ -133,7 +139,6 @@ public class AnodotTarget extends BaseTarget {
                     responseBody = response.readEntity(String.class);
                     processErrors(responseBody, currentBatch);
                 }
-                sendOffsetToAgent(batch.getSourceOffset(), firstRecord.get("tags").getValueAsMap().get("pipeline_id").getValueAsString());
                 response.close();
             }
         } catch (Exception ex) {
@@ -142,12 +147,21 @@ public class AnodotTarget extends BaseTarget {
         }
     }
 
+    private Record getLastRecord(Batch batch) {
+        Iterator<Record> iter = batch.getRecords();
+        Record record = null;
+        while (iter.hasNext()) {
+            record = iter.next();
+        }
+        return record;
+    }
+
     private void sendOffsetToAgent(String offset, String pipelineId) throws Exception {
         URLConnection con = new URL(conf.agentOffsetUrl + pipelineId).openConnection();
         HttpURLConnection http = (HttpURLConnection)con;
         http.setRequestMethod("POST");
         http.setDoOutput(true);
-        byte[] out = offset.getBytes(StandardCharsets.UTF_8);
+        byte[] out = String.format("{\"offset\": \"%s\"}", offset).getBytes(StandardCharsets.UTF_8);
         http.setFixedLengthStreamingMode(out.length);
         http.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
         http.connect();
@@ -155,7 +169,15 @@ public class AnodotTarget extends BaseTarget {
             os.write(out);
         }
         if (http.getResponseCode() != 200) {
-            throw new Exception("haha");
+            try(BufferedReader br = new BufferedReader(
+                    new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
+                StringBuilder response = new StringBuilder();
+                String responseLine;
+                while ((responseLine = br.readLine()) != null) {
+                    response.append(responseLine.trim());
+                }
+                throw new Exception(response.toString());
+            }
         }
     }
 
