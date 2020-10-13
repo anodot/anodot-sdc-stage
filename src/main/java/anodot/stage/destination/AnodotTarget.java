@@ -39,12 +39,17 @@ import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.StreamingOutput;
 import javax.ws.rs.core.Response;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * This target is an example and does not actually write to any destination.
@@ -160,6 +165,7 @@ public class AnodotTarget extends BaseTarget {
         URLConnection con = new URL(conf.agentOffsetUrl + pipelineId).openConnection();
         HttpURLConnection http = (HttpURLConnection)con;
         http.setRequestMethod("POST");
+        http.setConnectTimeout(15000);
         http.setDoOutput(true);
         byte[] out = String.format("{\"offset\": \"%s\"}", offset).getBytes(StandardCharsets.UTF_8);
         http.setFixedLengthStreamingMode(out.length);
@@ -176,7 +182,7 @@ public class AnodotTarget extends BaseTarget {
                 while ((responseLine = br.readLine()) != null) {
                     response.append(responseLine.trim());
                 }
-                throw new Exception(response.toString());
+                throw new Exception("Failed to save agent offset, response: " + response.toString());
             }
         }
     }
