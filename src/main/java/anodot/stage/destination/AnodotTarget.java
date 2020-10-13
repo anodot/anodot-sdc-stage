@@ -182,9 +182,11 @@ public class AnodotTarget extends BaseTarget {
                 while ((responseLine = br.readLine()) != null) {
                     response.append(responseLine.trim());
                 }
+                http.disconnect();
                 throw new Exception("Failed to save agent offset, response: " + response.toString());
             }
         }
+        http.disconnect();
     }
 
     private void processErrors(String responseBody, List<Record> currentBatch) throws StageException {
