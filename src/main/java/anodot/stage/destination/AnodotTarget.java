@@ -163,7 +163,7 @@ public class AnodotTarget extends BaseTarget {
 
     private void sendOffsetToAgent(String offset, String pipelineId) throws Exception {
         URLConnection con = new URL(conf.agentOffsetUrl + pipelineId).openConnection();
-        HttpURLConnection http = (HttpURLConnection)con;
+        HttpURLConnection http = (HttpURLConnection) con;
         http.setRequestMethod("POST");
         http.setConnectTimeout(15000);
         http.setDoOutput(true);
@@ -175,7 +175,7 @@ public class AnodotTarget extends BaseTarget {
             os.write(out);
         }
         if (http.getResponseCode() != 200) {
-            try(BufferedReader br = new BufferedReader(
+            try (BufferedReader br = new BufferedReader(
                     new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
                 StringBuilder response = new StringBuilder();
                 String responseLine;
@@ -205,11 +205,12 @@ public class AnodotTarget extends BaseTarget {
                 );
             } else {
                 errorRecordHandler.onError(
-                    new OnRecordErrorException(
-                            anodot.stage.lib.Errors.ANODOT_01,
-                            error.getInt("error"),
-                            error.getString("description")
-                    )
+                        currentBatch,
+                        new OnRecordErrorException(
+                                anodot.stage.lib.Errors.ANODOT_01,
+                                error.getInt("error"),
+                                error.getString("description")
+                        )
                 );
             }
         }
