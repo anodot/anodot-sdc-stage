@@ -21,10 +21,12 @@ import com.streamsets.pipeline.api.Record;
 import com.streamsets.pipeline.api.StageException;
 import com.streamsets.pipeline.api.base.BaseTarget;
 import com.streamsets.pipeline.api.base.OnRecordErrorException;
+import com.streamsets.pipeline.config.DataFormat;
 import com.streamsets.pipeline.lib.generator.DataGenerator;
 import com.streamsets.pipeline.lib.generator.DataGeneratorException;
 import com.streamsets.pipeline.lib.generator.DataGeneratorFactory;
 import com.streamsets.pipeline.lib.http.Errors;
+import com.streamsets.pipeline.lib.http.JerseyClientConfigBean;
 import com.streamsets.pipeline.stage.common.DefaultErrorRecordHandler;
 import com.streamsets.pipeline.stage.common.ErrorRecordHandler;
 import org.glassfish.jersey.client.oauth1.OAuth1ClientSupport;
@@ -36,20 +38,13 @@ import org.json.JSONObject;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.StreamingOutput;
 import javax.ws.rs.core.Response;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 /**
  * This target is an example and does not actually write to any destination.
@@ -162,31 +157,21 @@ public class AnodotTarget extends BaseTarget {
     }
 
     private void sendOffsetToAgent(String offset, String pipelineId) throws Exception {
-        URLConnection con = new URL(conf.agentOffsetUrl + pipelineId).openConnection();
-        HttpURLConnection http = (HttpURLConnection) con;
-        http.setRequestMethod("POST");
-        http.setConnectTimeout(15000);
-        http.setDoOutput(true);
-        byte[] out = String.format("{\"offset\": \"%s\"}", offset).getBytes(StandardCharsets.UTF_8);
-        http.setFixedLengthStreamingMode(out.length);
-        http.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-        http.connect();
-        try (OutputStream os = http.getOutputStream()) {
-            os.write(out);
+        HttpClientCommon httpClientCommon = new HttpClientCommon(new JerseyClientConfigBean());
+        List<ConfigIssue> issues = super.init();
+        httpClientCommon.init(issues, getContext());
+        WebTarget target = httpClientCommon.getClient().target(conf.agentOffsetUrl + pipelineId);
+        Invocation.Builder builder = target.request();
+        MultivaluedMap<String, Object> requestHeaders = new MultivaluedHashMap<>();
+        String contentType = HttpStageUtil.getContentType(requestHeaders, DataFormat.JSON);
+        Response response = builder.method(String.valueOf(HttpMethod.POST), Entity.entity(String.format("{\"offset\": \"%s\"}", offset).getBytes(StandardCharsets.UTF_8), contentType));
+
+        if (response.getStatus() < 200 || response.getStatus() >= 300) {
+            String responseEntity = response.readEntity(String.class);
+            response.close();
+            throw new Exception("Failed to save agent offset, response: " + responseEntity);
         }
-        if (http.getResponseCode() != 200) {
-            try (BufferedReader br = new BufferedReader(
-                    new InputStreamReader(con.getInputStream(), StandardCharsets.UTF_8))) {
-                StringBuilder response = new StringBuilder();
-                String responseLine;
-                while ((responseLine = br.readLine()) != null) {
-                    response.append(responseLine.trim());
-                }
-                http.disconnect();
-                throw new Exception("Failed to save agent offset, response: " + response.toString());
-            }
-        }
-        http.disconnect();
+        response.close();
     }
 
     private void processErrors(String responseBody, List<Record> currentBatch) throws StageException {
