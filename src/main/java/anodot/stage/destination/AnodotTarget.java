@@ -44,7 +44,9 @@ import javax.ws.rs.core.StreamingOutput;
 import javax.ws.rs.core.Response;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * This target is an example and does not actually write to any destination.
@@ -166,12 +168,14 @@ public class AnodotTarget extends BaseTarget {
         String contentType = HttpStageUtil.getContentType(requestHeaders, DataFormat.JSON);
         Response response = builder.method(String.valueOf(HttpMethod.POST), Entity.entity(String.format("{\"offset\": \"%s\"}", offset).getBytes(StandardCharsets.UTF_8), contentType));
 
-        if (response.getStatus() < 200 || response.getStatus() >= 300) {
-            String responseEntity = response.readEntity(String.class);
+        try {
+            if (response.getStatus() < 200 || response.getStatus() >= 300) {
+                String responseEntity = response.readEntity(String.class);
+                throw new Exception("Failed to save agent offset, response: " + responseEntity);
+            }
+        } finally {
             response.close();
-            throw new Exception("Failed to save agent offset, response: " + responseEntity);
         }
-        response.close();
     }
 
     private void processErrors(String responseBody, List<Record> currentBatch) throws StageException {
