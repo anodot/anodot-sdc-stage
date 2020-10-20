@@ -21,10 +21,12 @@ import com.streamsets.pipeline.api.Record;
 import com.streamsets.pipeline.api.StageException;
 import com.streamsets.pipeline.api.base.BaseTarget;
 import com.streamsets.pipeline.api.base.OnRecordErrorException;
+import com.streamsets.pipeline.config.DataFormat;
 import com.streamsets.pipeline.lib.generator.DataGenerator;
 import com.streamsets.pipeline.lib.generator.DataGeneratorException;
 import com.streamsets.pipeline.lib.generator.DataGeneratorFactory;
 import com.streamsets.pipeline.lib.http.Errors;
+import com.streamsets.pipeline.lib.http.JerseyClientConfigBean;
 import com.streamsets.pipeline.stage.common.DefaultErrorRecordHandler;
 import com.streamsets.pipeline.stage.common.ErrorRecordHandler;
 import org.glassfish.jersey.client.oauth1.OAuth1ClientSupport;
@@ -36,10 +38,12 @@ import org.json.JSONObject;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.StreamingOutput;
 import javax.ws.rs.core.Response;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -103,6 +107,12 @@ public class AnodotTarget extends BaseTarget {
     public void write(Batch batch) throws StageException {
         try {
             Iterator<Record> records = batch.getRecords();
+            Record lastRecord = getLastRecord(batch);
+            if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {
+                String pipelineId = lastRecord.get().getValueAsMap().get("tags").getValueAsMap().get("pipeline_id").getValueAsList().get(0).getValueAsString();
+                String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();
+                sendOffsetToAgent(offset, pipelineId);
+            }
 
             while (records.hasNext()) {
                 // Use first record for resolving url, headers, ...
@@ -139,6 +149,35 @@ public class AnodotTarget extends BaseTarget {
         }
     }
 
+    private Record getLastRecord(Batch batch) {
+        Iterator<Record> iter = batch.getRecords();
+        Record record = null;
+        while (iter.hasNext()) {
+            record = iter.next();
+        }
+        return record;
+    }
+
+    private void sendOffsetToAgent(String offset, String pipelineId) throws Exception {
+        HttpClientCommon httpClientCommon = new HttpClientCommon(new JerseyClientConfigBean());
+        List<ConfigIssue> issues = super.init();
+        httpClientCommon.init(issues, getContext());
+        WebTarget target = httpClientCommon.getClient().target(conf.agentOffsetUrl + pipelineId);
+        Invocation.Builder builder = target.request();
+        MultivaluedMap<String, Object> requestHeaders = new MultivaluedHashMap<>();
+        String contentType = HttpStageUtil.getContentType(requestHeaders, DataFormat.JSON);
+        Response response = builder.method(String.valueOf(HttpMethod.POST), Entity.entity(String.format("{\"offset\": \"%s\"}", offset).getBytes(StandardCharsets.UTF_8), contentType));
+
+        try {
+            if (response.getStatus() < 200 || response.getStatus() >= 300) {
+                String responseEntity = response.readEntity(String.class);
+                throw new Exception("Failed to save agent offset, response: " + responseEntity);
+            }
+        } finally {
+            response.close();
+        }
+    }
+
     private void processErrors(String responseBody, List<Record> currentBatch) throws StageException {
         JSONObject jsonResponse = new JSONObject(responseBody);
         JSONArray errors = (JSONArray) jsonResponse.get("errors");
@@ -155,11 +194,12 @@ public class AnodotTarget extends BaseTarget {
                 );
             } else {
                 errorRecordHandler.onError(
-                    new OnRecordErrorException(
-                            anodot.stage.lib.Errors.ANODOT_01,
-                            error.getInt("error"),
-                            error.getString("description")
-                    )
+                        currentBatch,
+                        new OnRecordErrorException(
+                                anodot.stage.lib.Errors.ANODOT_01,
+                                error.getInt("error"),
+                                error.getString("description")
+                        )
                 );
             }
         }

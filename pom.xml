@@ -24,7 +24,7 @@
   <version>1.0.1</version>
 
   <properties>
-    <streamsets.version>3.8.2</streamsets.version>
+    <streamsets.version>3.15.0</streamsets.version>
     <slf4j.version>1.7.7</slf4j.version>
     <junit.version>4.13.1</junit.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
