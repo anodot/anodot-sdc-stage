@@ -109,9 +109,8 @@ public class AnodotTarget extends BaseTarget {
             Iterator<Record> records = batch.getRecords();
             Record lastRecord = getLastRecord(batch);
             if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {
-                String pipelineId = lastRecord.get().getValueAsMap().get("tags").getValueAsMap().get("pipeline_id").getValueAsList().get(0).getValueAsString();
                 String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();
-                sendOffsetToAgent(offset, pipelineId);
+                sendOffsetToAgent(offset);
             }
 
             while (records.hasNext()) {
@@ -158,11 +157,11 @@ public class AnodotTarget extends BaseTarget {
         return record;
     }
 
-    private void sendOffsetToAgent(String offset, String pipelineId) throws Exception {
+    private void sendOffsetToAgent(String offset) throws Exception {
         HttpClientCommon httpClientCommon = new HttpClientCommon(new JerseyClientConfigBean());
         List<ConfigIssue> issues = super.init();
         httpClientCommon.init(issues, getContext());
-        WebTarget target = httpClientCommon.getClient().target(conf.agentOffsetUrl + pipelineId);
+        WebTarget target = httpClientCommon.getClient().target(conf.agentOffsetUrl);
         Invocation.Builder builder = target.request();
         MultivaluedMap<String, Object> requestHeaders = new MultivaluedHashMap<>();
         String contentType = HttpStageUtil.getContentType(requestHeaders, DataFormat.JSON);
