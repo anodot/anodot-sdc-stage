@@ -107,12 +107,6 @@ public class AnodotTarget extends BaseTarget {
     public void write(Batch batch) throws StageException {
         try {
             Iterator<Record> records = batch.getRecords();
-            Record lastRecord = getLastRecord(batch);
-            if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {
-                String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();
-                sendOffsetToAgent(offset);
-            }
-
             while (records.hasNext()) {
                 // Use first record for resolving url, headers, ...
                 Record firstRecord = batch.getRecords().next();
@@ -141,6 +135,12 @@ public class AnodotTarget extends BaseTarget {
                     processErrors(responseBody, currentBatch);
                 }
                 response.close();
+            }
+
+            Record lastRecord = getLastRecord(batch);
+            if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {
+                String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();
+                sendOffsetToAgent(offset);
             }
         } catch (Exception ex) {
             LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex.toString(), ex);
