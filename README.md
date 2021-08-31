@@ -1,7 +1,7 @@
 # Anodot stage library for Streamsets Data Collector
 
 ### How to build
-1. Clone [Streamsets Data Collector repo](https://github.com/streamsets/datacollector)
+1. Clone [Streamsets Data Collector repo](https://github.com/streamsets/datacollector-oss)
 2. Build required streamsets dependencies
 ```
 mvn -pl httpcommonlib -am clean install -DskipTests
