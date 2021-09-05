@@ -47,7 +47,7 @@ public class ParallelSender {
         partitionFieldKeyPath = conf.partitioningKeyPath;
         maxSendResponseWait = conf.maxSendResponseWait;
         Arrays.setAll(workersPool, workerIndex -> new Worker(completionQueue,workerIndex, context, issues, conf));
-        LOG.debug("AnodotTargetID: " + targetIdentifier + " | Created ParallelSender with workers:" + parallelSendersNumber + " Properties field path: " + propertiesFieldPath + " partitionKeyPath: " + partitionFieldKeyPath);
+        //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Created ParallelSender with workers:" + parallelSendersNumber + " Properties field path: " + propertiesFieldPath + " partitionKeyPath: " + partitionFieldKeyPath);
     }
 
     public void init(String resolvedUrl, String contentType, MultivaluedMap<String, Object> resolvedHeaders) {
@@ -62,7 +62,7 @@ public class ParallelSender {
         }
 
         for(Worker worker : workersPool) {
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | Initializing worker with resolvedURL: " + resolvedUrl + " and contentType: " + contentType);
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Initializing worker with resolvedURL: " + resolvedUrl + " and contentType: " + contentType);
             worker.init(resolvedUrl, contentType, resolvedHeaders);
         }
     }
@@ -75,14 +75,14 @@ public class ParallelSender {
 
     public void send(Record record) {
         int targetPartition = getPartition(record);
-        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Partition resolved to: " + targetPartition);
+        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Partition resolved to: " + targetPartition);
         if(workersPool[targetPartition].add(record)) {
             ++pendingTasks;
         }
     }
 
     public void flush() {
-        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Flushing workers");
+        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Flushing workers");
 
         for (Worker worker : workersPool) {
             if(worker.flush()) {
@@ -90,7 +90,7 @@ public class ParallelSender {
             }
         }
 
-        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Flushing workers, final pending tasks: " + pendingTasks);
+        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Flushing workers, final pending tasks: " + pendingTasks);
     }
 
     /**
@@ -99,17 +99,17 @@ public class ParallelSender {
      * @throws InterruptedException if interrupted while waiting for future result to become available
      */
     public @Nullable Future<BatchResponse> take() throws InterruptedException {
-        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Trying to take completed future, pending tasks: " + pendingTasks);
+        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Trying to take completed future, pending tasks: " + pendingTasks);
 
         if(pendingTasks == 0) {
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | No more pending tasks");
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | No more pending tasks");
             return null;
         }
 
         Future<BatchResponse> responseFuture = completionQueue.poll(maxSendResponseWait, TimeUnit.MILLISECONDS);
         if(responseFuture != null) {
             --pendingTasks;
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | Acquired next responseFuture, new pendingTasks: " + pendingTasks);
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Acquired next responseFuture, new pendingTasks: " + pendingTasks);
         } else {
             LOG.warn("AnodotTargetID: " + targetIdentifier + " | Timed out while waiting for responseFuture, current pending tasks: " + pendingTasks);
         }
@@ -124,7 +124,7 @@ public class ParallelSender {
                 map(Field::getValueAsString).
                 orElse(null);
 
-        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Resolving partition for partitionKey: " + partitionKey);
+        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Resolving partition for partitionKey: " + partitionKey);
 
         if(partitionKey == null) {
             return DEFAULT_PARTITION;
@@ -166,13 +166,13 @@ public class ParallelSender {
          */
         public boolean add(Record record) {
             currentBatch.add(record);
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Adding new record to batch");
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Adding new record to batch");
             if(currentBatch.size() < maxBatchSize) {
-                LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Batch too small, not sending");
+                //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Batch too small, not sending");
                 return false;
             }
 
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending batch to target");
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending batch to target");
             return submitCurrentBatch();
         }
 
@@ -181,26 +181,26 @@ public class ParallelSender {
          * @return true if the batch was sent (if it was non-empty), false otherwise
          */
         public boolean flush() {
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Performing flush on currentBatch of size: " + currentBatch.size());
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Performing flush on currentBatch of size: " + currentBatch.size());
             return submitCurrentBatch();
         }
 
         private boolean submitCurrentBatch() {
             if(currentBatch.isEmpty()) {
-                LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received batch is empty, returning");
+                //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received batch is empty, returning");
                 return false;
             }
             List<Record> batchToSend = currentBatch;
             currentBatch = new ArrayList<>();
 
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Going to send batch of size: " + batchToSend.size());
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Going to send batch of size: " + batchToSend.size());
             completionService.submit(() -> sendRecords(batchToSend));
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Submitted batch for sending");
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Submitted batch for sending");
             return true;
         }
 
         public BatchResponse sendRecords(@NotNull List<Record> currentBatch) {
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending records from batch of size: " + currentBatch.size());
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending records from batch of size: " + currentBatch.size());
             StreamingOutput streamingOutput = createStreamingOutput(currentBatch.iterator());
             Response response = builder.method(conf.httpMethod.getLabel(), Entity.entity(streamingOutput, contentType));
             String responseEntity = null;
@@ -211,7 +211,7 @@ public class ParallelSender {
                     responseEntity = response.readEntity(String.class);
                 }
             }
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received response for request: " + response.getStatus());
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received response for request: " + response.getStatus());
             return new BatchResponse(response, currentBatch, responseEntity);
         }
 
@@ -224,7 +224,7 @@ public class ParallelSender {
                 while (records.hasNext()) {
                     Record record = records.next();
                     dataGenerator.write(record);
-                    LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Wrote record to dataGenerator");
+                    //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Wrote record to dataGenerator");
                 }
                 dataGenerator.flush();
             } catch (DataGeneratorException e) {
@@ -249,7 +249,7 @@ public class ParallelSender {
 
         public void destroy() {
             httpClientCommon.destroy();
-            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Worker destroyed");
+            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Worker destroyed");
         }
     }
 
