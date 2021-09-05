@@ -196,4 +196,14 @@ public class AnodotTargetConfig {
   )
   public String partitioningKeyPath = "what";
 
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.NUMBER,
+          label = "MaxSendWait",
+          defaultValue = "60000",
+          description = "Maximum time in milliseconds to wait for a single chunk to be sent, timing this out does not mean the sample was sent but we might miss the response",
+          displayPosition = 150,
+          group = "HTTP"
+  )
+  public long maxSendResponseWait = 60000;
 }

@@ -106,10 +106,10 @@ public class AnodotTarget extends BaseTarget {
     @Override
     public void write(Batch batch) throws StageException {
         try {
-            //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Starting new batch");
+            LOG.debug("AnodotTargetID: " + targetIdentifier + " | Starting new batch");
             Iterator<Record> records = batch.getRecords();
             if(!records.hasNext()) {
-                //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Received empty batch");
+                LOG.debug("AnodotTargetID: " + targetIdentifier + " | Received empty batch");
                 return;
             }
 
@@ -119,26 +119,31 @@ public class AnodotTarget extends BaseTarget {
             String resolvedUrl = httpClientCommon.getResolvedUrl(conf.resourceUrl, firstRecord);
             String contentType = HttpStageUtil.getContentType(resolvedHeaders, conf.dataFormat);
 
-            //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Initialising parallel sender with resolvedURL: " + resolvedUrl + " and contentType: " + contentType);
+            LOG.debug("AnodotTargetID: " + targetIdentifier + " | Initialising parallel sender with resolvedURL: " + resolvedUrl + " and contentType: " + contentType);
 
             parallelSender.init(resolvedUrl, contentType, resolvedHeaders);
             long recordCounter = 0;
             while (records.hasNext()) {
                 Record record = records.next();
-//                if(LOG.isTraceEnabled()) {
-                    //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Sending next record: " + record);
-//                }
+                if(LOG.isTraceEnabled()) {
+                    LOG.trace("AnodotTargetID: " + targetIdentifier + " | Sending next record: " + record);
+                }
 
                 parallelSender.send(record);
                 ++recordCounter;
             }
 
-            //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Finished sending messages, sent: " + recordCounter);
+            LOG.debug("AnodotTargetID: " + targetIdentifier + " | Finished sending messages, sent: " + recordCounter);
             parallelSender.flush();
 
-            for (Future<ParallelSender.BatchResponse> responseFuture = parallelSender.poll() ; responseFuture != null ; responseFuture = parallelSender.poll()) {
+            int processedTasksCount = 0;
+            
+            for (Future<ParallelSender.BatchResponse> responseFuture = parallelSender.take() ; responseFuture != null ; responseFuture = parallelSender.take()) {
+                ++processedTasksCount;
                 processResponse(responseFuture);
             }
+
+            LOG.debug("AnodotTargetID: " + targetIdentifier + " | Finished processing futures, total: " + processedTasksCount);
 
             Record lastRecord = getLastRecord(batch);
             if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {

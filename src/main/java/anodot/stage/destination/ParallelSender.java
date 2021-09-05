@@ -25,13 +25,18 @@ import java.util.concurrent.*;
 public class ParallelSender {
     private static final Logger LOG = LoggerFactory.getLogger(ParallelSender.class);
 
+    private final BlockingQueue<Future<BatchResponse>> completionQueue = new LinkedBlockingQueue<>();
     private final String targetIdentifier;//Helps us to track the instance through multithreaded environment
     private final String propertiesFieldPath;
     private final String partitionFieldKeyPath;
+    private final long maxSendResponseWait;
     private final int parallelSendersNumber;
     private static final int DEFAULT_PARTITION = 0;
     private final Worker[] workersPool;
-
+    /**
+     * We do not rely on completionQueue.size() since there is a short race between the moment the send() method returns and the future is actually added to the completionQueue on sending thread
+     **/
+    private       long pendingTasks = 0;
     public ParallelSender(AnodotTargetConfig conf,
                           Target.Context context,
                           List<Stage.ConfigIssue> issues, String targetIdentifier) {
@@ -40,13 +45,24 @@ public class ParallelSender {
         workersPool = new Worker[parallelSendersNumber];
         propertiesFieldPath = conf.propertiesPath;
         partitionFieldKeyPath = conf.partitioningKeyPath;
-        Arrays.setAll(workersPool, workerIndex -> new Worker(workerIndex, context, issues, conf));
-        //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Created ParallelSender with workers:" + parallelSendersNumber + " Properties field path: " + propertiesFieldPath + " partitionKeyPath: " + partitionFieldKeyPath);
+        maxSendResponseWait = conf.maxSendResponseWait;
+        Arrays.setAll(workersPool, workerIndex -> new Worker(completionQueue,workerIndex, context, issues, conf));
+        LOG.debug("AnodotTargetID: " + targetIdentifier + " | Created ParallelSender with workers:" + parallelSendersNumber + " Properties field path: " + propertiesFieldPath + " partitionKeyPath: " + partitionFieldKeyPath);
     }
 
     public void init(String resolvedUrl, String contentType, MultivaluedMap<String, Object> resolvedHeaders) {
+        if(completionQueue.size() != 0) {//This check is more efficient than clearing an empty queue
+            LOG.warn("AnodotTargetID: " + targetIdentifier + " | Resetting non-empty completion queue on initialization, current size: " + completionQueue.size());
+            completionQueue.clear();
+        }
+
+        if(pendingTasks != 0) {
+            LOG.warn("AnodotTargetID: " + targetIdentifier + " | Resetting pending tasks on initialization, current value: " + pendingTasks);
+            pendingTasks = 0;
+        }
+
         for(Worker worker : workersPool) {
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Initializing worker with resolvedURL: " + resolvedUrl + " and contentType: " + contentType);
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | Initializing worker with resolvedURL: " + resolvedUrl + " and contentType: " + contentType);
             worker.init(resolvedUrl, contentType, resolvedHeaders);
         }
     }
@@ -59,37 +75,46 @@ public class ParallelSender {
 
     public void send(Record record) {
         int targetPartition = getPartition(record);
-        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Partition resolved to: " + targetPartition);
-        workersPool[targetPartition].offer(record);
+        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Partition resolved to: " + targetPartition);
+        if(workersPool[targetPartition].add(record)) {
+            ++pendingTasks;
+        }
     }
 
     public void flush() {
-        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Flushing workers");
+        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Flushing workers");
 
         for (Worker worker : workersPool) {
-            worker.flush();
+            if(worker.flush()) {
+                ++pendingTasks;
+            }
         }
+
+        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Flushing workers, final pending tasks: " + pendingTasks);
     }
 
-    public @Nullable Future<BatchResponse> poll() throws InterruptedException {
-        //First we try to darin in non-blocking mode
-        for(Worker worker : workersPool) {
-            Future<BatchResponse> completedFuture = worker.poll();
-            if(completedFuture != null) {
-                return completedFuture;
-            }
+    /**
+     * A potentially blocking call that retrieves the next completed future of sent event. If no completed futures are available waits up to {@link #maxSendResponseWait} for the future to become available.
+     * @return a completed future if one is available or null otherwise. Returning null may also mean that all futures were consumed (the happy path flow)
+     * @throws InterruptedException if interrupted while waiting for future result to become available
+     */
+    public @Nullable Future<BatchResponse> take() throws InterruptedException {
+        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Trying to take completed future, pending tasks: " + pendingTasks);
+
+        if(pendingTasks == 0) {
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | No more pending tasks");
+            return null;
         }
 
-        //If no completed futures are available ATM we start to block until a future is ready or none pending tasks are left
-        for(Worker worker : workersPool) {
-            Future<BatchResponse> responseFuture = worker.take();
-
-            if(responseFuture != null) {
-                return responseFuture;
-            }
+        Future<BatchResponse> responseFuture = completionQueue.poll(maxSendResponseWait, TimeUnit.MILLISECONDS);
+        if(responseFuture != null) {
+            --pendingTasks;
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | Acquired next responseFuture, new pendingTasks: " + pendingTasks);
+        } else {
+            LOG.warn("AnodotTargetID: " + targetIdentifier + " | Timed out while waiting for responseFuture, current pending tasks: " + pendingTasks);
         }
 
-        return null;
+        return responseFuture;
     }
 
     private int getPartition(Record record) {
@@ -99,7 +124,7 @@ public class ParallelSender {
                 map(Field::getValueAsString).
                 orElse(null);
 
-        //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Resolving partition for partitionKey: " + partitionKey);
+        LOG.trace("AnodotTargetID: " + targetIdentifier + " | Resolving partition for partitionKey: " + partitionKey);
 
         if(partitionKey == null) {
             return DEFAULT_PARTITION;
@@ -109,20 +134,18 @@ public class ParallelSender {
     }
 
     public class Worker {
-        private final ExecutorService exec = Executors.newSingleThreadExecutor();
-        private final BlockingQueue<Future<BatchResponse>> completionQueue = new LinkedBlockingQueue<>();
-        private final CompletionService<BatchResponse> completionService = new ExecutorCompletionService<>(exec, completionQueue);
+        private final CompletionService<BatchResponse> completionService ;
         private final DataGeneratorFactory generatorFactory;
         private final HttpClientCommon httpClientCommon;
         private       List<Record> currentBatch = new ArrayList<>();
         //We could have relied on completionQueue size instead of this counter but working with non-atomic variable is faster
-        private       long pendingTasks = 0;
         private       Invocation.Builder builder;
         private final AnodotTargetConfig conf;
         private       String contentType;
         private final int   maxBatchSize;
         private final int   workerIndex;
-        public Worker(int workerIndex, Target.Context context, List<Stage.ConfigIssue> issues, AnodotTargetConfig conf) {
+        public Worker(BlockingQueue<Future<BatchResponse>> completionQueue, int workerIndex, Target.Context context, List<Stage.ConfigIssue> issues, AnodotTargetConfig conf) {
+            completionService = new ExecutorCompletionService<>(Executors.newSingleThreadExecutor(), completionQueue);
             this.workerIndex = workerIndex;
             this.conf = conf;
             this.maxBatchSize = conf.maxBatchSize;
@@ -132,74 +155,52 @@ public class ParallelSender {
         }
 
         public void init(String resolvedUrl, String contentType, MultivaluedMap<String, Object> resolvedHeaders) {
-            if(completionQueue.size() != 0) {//This check is more efficient than clearing an empty queue
-                LOG.warn("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Completion queue non-empty on initialization: " + completionQueue.size());
-
-                completionQueue.clear();
-            }
-
             this.builder = createBuilder(resolvedUrl, resolvedHeaders);
             this.contentType = contentType;
         }
 
-        public void offer(Record record) {
+        /**
+         * Adds the provided record to worker's batch. If the current batch exceeds the maximum batch size after the addition, the batch is actually sent to destination, otherwise no sending is performed
+         * @param record a record to send
+         * @return true if the batch was actually sent to destination, false otherwise
+         */
+        public boolean add(Record record) {
             currentBatch.add(record);
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Adding new record to batch");
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Adding new record to batch");
             if(currentBatch.size() < maxBatchSize) {
-                //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Batch too small, not sending");
-                return;
+                LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Batch too small, not sending");
+                return false;
             }
 
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending batch to target");
-            submitCurrentBatch();
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending batch to target");
+            return submitCurrentBatch();
         }
 
-        public void flush() {
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Performing flush on currentBatch of size: " + currentBatch.size());
-            submitCurrentBatch();
+        /**
+         * Forces the worker to send the current batch regardless of its size
+         * @return true if the batch was sent (if it was non-empty), false otherwise
+         */
+        public boolean flush() {
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Performing flush on currentBatch of size: " + currentBatch.size());
+            return submitCurrentBatch();
         }
 
-        public @Nullable Future<BatchResponse> poll() {
-            Future<BatchResponse> responseFuture = completionService.poll();
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Polling completed future, result is : " + responseFuture + ", pending tasks: " + pendingTasks);
-            if(responseFuture != null) {
-                --pendingTasks;
-            }
-            return responseFuture;
-        }
-
-        public @Nullable Future<BatchResponse> take() throws InterruptedException {
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Trying to take completed future, pending tasks: " + pendingTasks);
-
-            if(pendingTasks == 0) {
-                return null;
-            }
-
-            Future<BatchResponse> responseFuture = completionService.poll(1, TimeUnit.MINUTES);
-            if(responseFuture == null) {
-                LOG.error("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Waiting for send to complete timed out, pending tasks: " + pendingTasks + ", completion queue size: " + completionQueue.size());
-            }
-
-            --pendingTasks;
-            return responseFuture;
-        }
-
-        private void submitCurrentBatch() {
+        private boolean submitCurrentBatch() {
             if(currentBatch.isEmpty()) {
-                //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received batch is empty, returning");
-                return;
+                LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received batch is empty, returning");
+                return false;
             }
             List<Record> batchToSend = currentBatch;
             currentBatch = new ArrayList<>();
 
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Going to send batch of size: " + batchToSend.size());
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Going to send batch of size: " + batchToSend.size());
             completionService.submit(() -> sendRecords(batchToSend));
-            ++pendingTasks;
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Submitted batch for sending");
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Submitted batch for sending");
+            return true;
         }
 
         public BatchResponse sendRecords(@NotNull List<Record> currentBatch) {
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending records from batch of size: " + currentBatch.size());
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Sending records from batch of size: " + currentBatch.size());
             StreamingOutput streamingOutput = createStreamingOutput(currentBatch.iterator());
             Response response = builder.method(conf.httpMethod.getLabel(), Entity.entity(streamingOutput, contentType));
             String responseEntity = null;
@@ -210,7 +211,7 @@ public class ParallelSender {
                     responseEntity = response.readEntity(String.class);
                 }
             }
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received response for request: " + response.getStatus());
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received response for request: " + response.getStatus());
             return new BatchResponse(response, currentBatch, responseEntity);
         }
 
@@ -223,7 +224,7 @@ public class ParallelSender {
                 while (records.hasNext()) {
                     Record record = records.next();
                     dataGenerator.write(record);
-                    //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Wrote record to dataGenerator");
+                    LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Wrote record to dataGenerator");
                 }
                 dataGenerator.flush();
             } catch (DataGeneratorException e) {
@@ -248,7 +249,7 @@ public class ParallelSender {
 
         public void destroy() {
             httpClientCommon.destroy();
-            //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Worker destroyed");
+            LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Worker destroyed");
         }
     }
 
