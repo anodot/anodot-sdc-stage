@@ -149,4 +149,51 @@ public class AnodotTargetConfig {
           group = "HTTP"
   )
   public String agentOffsetUrl = "";
+
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.NUMBER,
+          label = "Senders",
+          defaultValue = "10",
+          description = "Number of parallel senders to send requests",
+          displayPosition = 110,
+          group = "HTTP"
+  )
+  public int parallelSendersNumber = 10;
+
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.NUMBER,
+          label = "BatchSize",
+          defaultValue = "1000",
+          description = "Maximum number of samples in a single batch",
+          displayPosition = 120,
+          group = "HTTP"
+  )
+  public int maxBatchSize = 1000;
+
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.STRING,
+          label = "PropertiesPath",
+          defaultValue = "properties",
+          description = "Path to properties field in sample",
+          evaluation = ConfigDef.Evaluation.EXPLICIT,
+          displayPosition = 130,
+          group = "HTTP"
+  )
+  public String propertiesPath = "properties";
+
+  @ConfigDef(
+          required = true,
+          type = ConfigDef.Type.STRING,
+          label = "PartitioningKeyPath",
+          defaultValue = "what",
+          description = "Path to property according to which we partition sending, usually metric name or what",
+          evaluation = ConfigDef.Evaluation.EXPLICIT,
+          displayPosition = 140,
+          group = "HTTP"
+  )
+  public String partitioningKeyPath = "what";
+
 }

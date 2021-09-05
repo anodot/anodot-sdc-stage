@@ -22,31 +22,27 @@ import com.streamsets.pipeline.api.StageException;
 import com.streamsets.pipeline.api.base.BaseTarget;
 import com.streamsets.pipeline.api.base.OnRecordErrorException;
 import com.streamsets.pipeline.config.DataFormat;
-import com.streamsets.pipeline.lib.generator.DataGenerator;
-import com.streamsets.pipeline.lib.generator.DataGeneratorException;
-import com.streamsets.pipeline.lib.generator.DataGeneratorFactory;
 import com.streamsets.pipeline.lib.http.Errors;
 import com.streamsets.pipeline.lib.http.JerseyClientConfigBean;
 import com.streamsets.pipeline.stage.common.DefaultErrorRecordHandler;
 import com.streamsets.pipeline.stage.common.ErrorRecordHandler;
-import org.glassfish.jersey.client.oauth1.OAuth1ClientSupport;
 import org.json.JSONArray;
+import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.json.JSONObject;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.Invocation;
 import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.StreamingOutput;
 import javax.ws.rs.core.Response;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
 /**
  * This target is an example and does not actually write to any destination.
@@ -56,12 +52,13 @@ public class AnodotTarget extends BaseTarget {
     private static final Logger LOG = LoggerFactory.getLogger(AnodotTarget.class);
     private final AnodotTargetConfig conf;
     private final HttpClientCommon httpClientCommon;
-    private DataGeneratorFactory generatorFactory;
     private ErrorRecordHandler errorRecordHandler;
-
-    private static final int BATCH_SIZE = 1000;
+    private ParallelSender parallelSender;
+    private final String targetIdentifier;//Helps us to track the instance through multithreaded environment
 
     protected AnodotTarget(AnodotTargetConfig conf) {
+        targetIdentifier = UUID.randomUUID().toString();
+        LOG.info("AnodotTargetID: " + targetIdentifier + " | Creating AnodotTarget");
         this.conf = conf;
         this.httpClientCommon = new HttpClientCommon(conf.client);
     }
@@ -72,8 +69,9 @@ public class AnodotTarget extends BaseTarget {
     @Override
     protected List<ConfigIssue> init() {
         // Validate configuration values and open any required resources.
-        List<ConfigIssue> issues = super.init();
+        LOG.info("AnodotTargetID: " + targetIdentifier + " | Initializing AnodotTarget");
 
+        List<ConfigIssue> issues = super.init();
         errorRecordHandler = new DefaultErrorRecordHandler(getContext());
         this.httpClientCommon.init(issues, getContext());
         if (issues.size() == 0) {
@@ -84,8 +82,9 @@ public class AnodotTarget extends BaseTarget {
                     HttpClientCommon.DATA_FORMAT_CONFIG_PREFIX,
                     issues
             );
-            generatorFactory = conf.dataGeneratorFormatConfig.getDataGeneratorFactory();
         }
+
+        parallelSender = new ParallelSender(conf, getContext(), issues, targetIdentifier);
         // If issues is not empty, the UI will inform the user of each configuration issue in the list.
         return issues;
     }
@@ -97,6 +96,7 @@ public class AnodotTarget extends BaseTarget {
     public void destroy() {
         // Clean up any open resources.
         this.httpClientCommon.destroy();
+        this.parallelSender.destroy();
         super.destroy();
     }
 
@@ -106,45 +106,83 @@ public class AnodotTarget extends BaseTarget {
     @Override
     public void write(Batch batch) throws StageException {
         try {
+            //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Starting new batch");
             Iterator<Record> records = batch.getRecords();
+            if(!records.hasNext()) {
+                //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Received empty batch");
+                return;
+            }
+
+            // Use first record for resolving url, headers, ...
+            Record firstRecord = batch.getRecords().next();
+            MultivaluedMap<String, Object> resolvedHeaders = httpClientCommon.resolveHeaders(conf.headers, firstRecord);
+            String resolvedUrl = httpClientCommon.getResolvedUrl(conf.resourceUrl, firstRecord);
+            String contentType = HttpStageUtil.getContentType(resolvedHeaders, conf.dataFormat);
+
+            //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Initialising parallel sender with resolvedURL: " + resolvedUrl + " and contentType: " + contentType);
+
+            parallelSender.init(resolvedUrl, contentType, resolvedHeaders);
+            long recordCounter = 0;
             while (records.hasNext()) {
-                // Use first record for resolving url, headers, ...
-                Record firstRecord = batch.getRecords().next();
-                MultivaluedMap<String, Object> resolvedHeaders = httpClientCommon.resolveHeaders(conf.headers, firstRecord);
-                Invocation.Builder builder = getBuilder(firstRecord).headers(resolvedHeaders);
-                String contentType = HttpStageUtil.getContentType(resolvedHeaders, conf.dataFormat);
+                Record record = records.next();
+//                if(LOG.isTraceEnabled()) {
+                    //LOG.trace("AnodotTargetID: " + targetIdentifier + " | Sending next record: " + record);
+//                }
 
-                ArrayList<Record> currentBatch = new ArrayList<>();
-                StreamingOutput streamingOutput = getStreamingOutput(records, currentBatch);
-                Response response = builder.method(conf.httpMethod.getLabel(), Entity.entity(streamingOutput, contentType));
+                parallelSender.send(record);
+                ++recordCounter;
+            }
 
-                String responseBody = "";
-                if (conf.client.useOAuth2 && (response.getStatus() == 403 || response.getStatus() == 401)) {
-                    HttpStageUtil.getNewOAuth2Token(conf.client.oauth2, httpClientCommon.getClient());
-                } else if (response.getStatus() < 200 || response.getStatus() >= 300) {
-                    errorRecordHandler.onError(
-                            currentBatch,
-                            new OnRecordErrorException(
-                                    com.streamsets.pipeline.lib.http.Errors.HTTP_40,
-                                    response.getStatus(),
-                                    response.getStatusInfo().getReasonPhrase() + " " + responseBody
-                            )
-                    );
-                } else if (response.hasEntity()) {
-                    responseBody = response.readEntity(String.class);
-                    processErrors(responseBody, currentBatch);
-                }
-                response.close();
+            //LOG.debug("AnodotTargetID: " + targetIdentifier + " | Finished sending messages, sent: " + recordCounter);
+            parallelSender.flush();
+
+            for (Future<ParallelSender.BatchResponse> responseFuture = parallelSender.poll() ; responseFuture != null ; responseFuture = parallelSender.poll()) {
+                processResponse(responseFuture);
             }
 
             Record lastRecord = getLastRecord(batch);
             if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {
-                String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();
+                String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();//properties/what
                 sendOffsetToAgent(offset);
             }
         } catch (Exception ex) {
             LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex.toString(), ex);
             errorRecordHandler.onError(Lists.newArrayList(batch.getRecords()), new StageException(Errors.HTTP_41, ex, ex));
+        }
+    }
+
+    private void processResponse(Future<ParallelSender.BatchResponse> batchResponseFuture) {
+
+        ParallelSender.BatchResponse batchResponse;
+        try {
+            batchResponse = batchResponseFuture.get();
+        } catch (InterruptedException e) {
+            LOG.error("AnodotTargetID: " + targetIdentifier + " | interrupted while waiting for response", e);
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            LOG.error("AnodotTargetID: " + targetIdentifier + " | Execution exception encountered while sending to anodot, aborting: ", e);
+            throw new RuntimeException(e);
+        }
+        Response response = batchResponse.getResponse();
+
+        try {
+            List<Record> currentBatch = batchResponse.getCurrentBatch();
+            if (response.getStatus() < 200 || response.getStatus() >= 300) {
+                errorRecordHandler.onError(
+                        currentBatch,
+                        new OnRecordErrorException(
+                                com.streamsets.pipeline.lib.http.Errors.HTTP_40,
+                                response.getStatus(),
+                                response.getStatusInfo().getReasonPhrase()
+                        )
+                );
+                return;
+            }
+            if (batchResponse.getResponseEntity() != null) {
+                processErrors(batchResponse.getResponseEntity(), currentBatch);
+            }
+        } finally {
+            response.close();
         }
     }
 
@@ -203,35 +241,4 @@ public class AnodotTarget extends BaseTarget {
             }
         }
     }
-
-    private StreamingOutput getStreamingOutput(Iterator<Record> records, List<Record> currentBatch) {
-        return outputStream -> {
-            try (DataGenerator dataGenerator = generatorFactory.getGenerator(outputStream)) {
-                int batchRecordsNum = 0;
-                while (records.hasNext() && batchRecordsNum < BATCH_SIZE) {
-                    Record record = records.next();
-                    dataGenerator.write(record);
-                    currentBatch.add(record);
-                    batchRecordsNum++;
-                }
-                dataGenerator.flush();
-            } catch (DataGeneratorException e) {
-                throw new IOException(e);
-            }
-        };
-    }
-
-
-    private Invocation.Builder getBuilder(Record record) throws StageException {
-        String resolvedUrl = httpClientCommon.getResolvedUrl(conf.resourceUrl, record);
-        WebTarget target = httpClientCommon.getClient().target(resolvedUrl);
-        // If the request (headers or body) contain a known sensitive EL and we're not using https then fail the request
-        if (httpClientCommon.requestContainsSensitiveInfo(conf.headers, null) &&
-                !target.getUri().getScheme().toLowerCase().startsWith("https")) {
-            throw new StageException(Errors.HTTP_07);
-        }
-        return target.request()
-                .property(OAuth1ClientSupport.OAUTH_PROPERTY_ACCESS_TOKEN, httpClientCommon.getAuthToken());
-    }
-
 }
