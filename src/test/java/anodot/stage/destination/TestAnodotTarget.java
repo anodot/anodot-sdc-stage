@@ -29,7 +29,7 @@ public class TestAnodotTarget {
   @Test
   public void testWriteSingleRecord() throws Exception {
     TargetRunner runner = new TargetRunner.Builder(AnodotDTarget.class)
-        .addConfiguration("config", "value")
+        .addConfiguration("conf", "value")
         .build();
 
     runner.runInit();

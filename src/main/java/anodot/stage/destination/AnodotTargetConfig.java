@@ -149,4 +149,61 @@ public class AnodotTargetConfig {
           group = "HTTP"
   )
   public String agentOffsetUrl = "";
+
+  @ConfigDef(
+          required = false,
+          type = ConfigDef.Type.NUMBER,
+          label = "Senders",
+          defaultValue = "10",
+          description = "Number of parallel senders to send requests",
+          displayPosition = 110,
+          group = "HTTP"
+  )
+  public int parallelSendersNumber = 1;
+
+  @ConfigDef(
+          required = false,
+          type = ConfigDef.Type.NUMBER,
+          label = "BatchSize",
+          defaultValue = "1000",
+          description = "Maximum number of samples in a single batch",
+          displayPosition = 120,
+          group = "HTTP"
+  )
+  public int maxBatchSize = 1000;
+
+  @ConfigDef(
+          required = false,
+          type = ConfigDef.Type.STRING,
+          label = "PropertiesPath",
+          defaultValue = "properties",
+          description = "Path to properties field in sample",
+          evaluation = ConfigDef.Evaluation.EXPLICIT,
+          displayPosition = 130,
+          group = "HTTP"
+  )
+  public String propertiesPath = "";
+
+  @ConfigDef(
+          required = false,
+          type = ConfigDef.Type.STRING,
+          label = "PartitioningKeyPath",
+          defaultValue = "what",
+          description = "Path to property according to which we partition sending, usually metric name or what",
+          evaluation = ConfigDef.Evaluation.EXPLICIT,
+          displayPosition = 140,
+          group = "HTTP"
+  )
+  public String partitioningKeyPath = "";
+
+  @ConfigDef(
+          required = false,
+          type = ConfigDef.Type.NUMBER,
+          label = "MaxSendWait",
+          defaultValue = "60000",
+          description = "Maximum time in milliseconds to wait for a single chunk to be sent, timing this out does not mean the sample was sent but we might miss the response",
+          displayPosition = 150,
+          group = "HTTP"
+  )
+  public long maxSendResponseWait = 60000;
 }
