@@ -2,7 +2,7 @@
 
 ### How to build
 1. Clone [Streamsets Data Collector repo](https://github.com/streamsets/datacollector-oss)
-2. Build required streamsets dependencies
+2. Switch to 3.18.0 tag and build required streamsets dependencies
 ```
 mvn -pl httpcommonlib -am clean install -DskipTests
 ```
