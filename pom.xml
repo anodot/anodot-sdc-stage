@@ -21,10 +21,10 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>anodot</groupId>
   <artifactId>anodot</artifactId>
-  <version>1.1.2</version>
+  <version>2.0.0</version>
 
   <properties>
-    <streamsets.version>3.15.0</streamsets.version>
+    <streamsets.version>3.18.0</streamsets.version>
     <slf4j.version>1.7.7</slf4j.version>
     <junit.version>4.13.1</junit.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

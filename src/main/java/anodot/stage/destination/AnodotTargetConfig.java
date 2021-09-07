@@ -151,7 +151,7 @@ public class AnodotTargetConfig {
   public String agentOffsetUrl = "";
 
   @ConfigDef(
-          required = true,
+          required = false,
           type = ConfigDef.Type.NUMBER,
           label = "Senders",
           defaultValue = "10",
@@ -159,10 +159,10 @@ public class AnodotTargetConfig {
           displayPosition = 110,
           group = "HTTP"
   )
-  public int parallelSendersNumber = 10;
+  public int parallelSendersNumber = 1;
 
   @ConfigDef(
-          required = true,
+          required = false,
           type = ConfigDef.Type.NUMBER,
           label = "BatchSize",
           defaultValue = "1000",
@@ -173,7 +173,7 @@ public class AnodotTargetConfig {
   public int maxBatchSize = 1000;
 
   @ConfigDef(
-          required = true,
+          required = false,
           type = ConfigDef.Type.STRING,
           label = "PropertiesPath",
           defaultValue = "properties",
@@ -182,10 +182,10 @@ public class AnodotTargetConfig {
           displayPosition = 130,
           group = "HTTP"
   )
-  public String propertiesPath = "properties";
+  public String propertiesPath = "";
 
   @ConfigDef(
-          required = true,
+          required = false,
           type = ConfigDef.Type.STRING,
           label = "PartitioningKeyPath",
           defaultValue = "what",
@@ -194,10 +194,10 @@ public class AnodotTargetConfig {
           displayPosition = 140,
           group = "HTTP"
   )
-  public String partitioningKeyPath = "what";
+  public String partitioningKeyPath = "";
 
   @ConfigDef(
-          required = true,
+          required = false,
           type = ConfigDef.Type.NUMBER,
           label = "MaxSendWait",
           defaultValue = "60000",
