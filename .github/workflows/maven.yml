@@ -19,8 +19,8 @@ jobs:
     - name: Checkout Streamsets
       uses: actions/checkout@v2.0.0
       with:
-        repository: streamsets/datacollector
-        ref: 3.15.0
+        repository: streamsets/datacollector-oss
+        ref: 3.18.0
     
     - name: Set up JDK 1.8
       uses: actions/setup-java@v1
