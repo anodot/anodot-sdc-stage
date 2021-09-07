@@ -31,7 +31,10 @@ jobs:
       with:
         path: ~/.m2/repository
         key: ${{ runner.os }}-maven
-    
+
+    - name: Fix maven repository path
+      run: sed -i 's#http://packages.confluent.io/maven/#https://packages.confluent.io/maven/#g' pom.xml
+
     - name: Build streamsets httpcommonlib
       run: mvn -pl httpcommonlib -am clean install -DskipTests
     
