@@ -207,9 +207,9 @@ public class ParallelSender {
             if (conf.client.useOAuth2 && (response.getStatus() == 403 || response.getStatus() == 401)) {
                 refreshAuthToken();
                 response = builder.method(conf.httpMethod.getLabel(), Entity.entity(streamingOutput, contentType));
-                if (response.hasEntity()) {
-                    responseEntity = response.readEntity(String.class);
-                }
+            }
+            if (response.hasEntity()) {
+                responseEntity = response.readEntity(String.class);
             }
             //LOG.trace("AnodotTargetID: " + targetIdentifier + " | worker: " + workerIndex + " | Received response for request: " + response.getStatus());
             return new BatchResponse(response, currentBatch, responseEntity);
