@@ -108,7 +108,7 @@ public class AnodotTarget extends BaseTarget {
         try {
             LOG.debug("AnodotTargetID: " + targetIdentifier + " | Starting new batch");
             Iterator<Record> records = batch.getRecords();
-            if(!records.hasNext()) {
+            if (!records.hasNext()) {
                 LOG.debug("AnodotTargetID: " + targetIdentifier + " | Received empty batch");
                 return;
             }
@@ -125,7 +125,7 @@ public class AnodotTarget extends BaseTarget {
             long recordCounter = 0;
             while (records.hasNext()) {
                 Record record = records.next();
-                if(LOG.isTraceEnabled()) {
+                if (LOG.isTraceEnabled()) {
                     LOG.trace("AnodotTargetID: " + targetIdentifier + " | Sending next record: " + record);
                 }
 
@@ -137,8 +137,8 @@ public class AnodotTarget extends BaseTarget {
             parallelSender.flush();
 
             int processedTasksCount = 0;
-            
-            for (Future<ParallelSender.BatchResponse> responseFuture = parallelSender.take() ; responseFuture != null ; responseFuture = parallelSender.take()) {
+
+            for (Future<ParallelSender.BatchResponse> responseFuture = parallelSender.take(); responseFuture != null; responseFuture = parallelSender.take()) {
                 ++processedTasksCount;
                 processResponse(responseFuture);
             }
@@ -151,13 +151,12 @@ public class AnodotTarget extends BaseTarget {
                 sendOffsetToAgent(offset);
             }
         } catch (Exception ex) {
-            LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex.toString(), ex);
+            LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex, ex);
             errorRecordHandler.onError(Lists.newArrayList(batch.getRecords()), new StageException(Errors.HTTP_41, ex, ex));
         }
     }
 
     private void processResponse(Future<ParallelSender.BatchResponse> batchResponseFuture) {
-
         ParallelSender.BatchResponse batchResponse;
         try {
             batchResponse = batchResponseFuture.get();
@@ -183,8 +182,9 @@ public class AnodotTarget extends BaseTarget {
                 );
                 return;
             }
-            if (batchResponse.getResponseEntity() != null) {
-                processErrors(batchResponse.getResponseEntity(), currentBatch);
+            String responseAsString = response.readEntity(String.class);
+            if (!responseAsString.equals("")) {
+                processErrors(responseAsString, currentBatch);
             }
         } finally {
             response.close();
