@@ -33,7 +33,6 @@ import org.slf4j.LoggerFactory;
 
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.Invocation;
-import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MultivaluedHashMap;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
@@ -146,9 +145,15 @@ public class AnodotTarget extends BaseTarget {
             LOG.debug("AnodotTargetID: " + targetIdentifier + " | Finished processing futures, total: " + processedTasksCount);
 
             Record lastRecord = getLastRecord(batch);
-            if (lastRecord != null && !conf.agentOffsetUrl.equals("")) {
-                String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();//properties/what
-                sendOffsetToAgent(offset);
+            if (lastRecord != null) {
+                if (!conf.agentOffsetUrl.equals("")) {
+                    String offset = lastRecord.get().getValueAsMap().get("timestamp").getValueAsString();//properties/what
+                    sendToUrl(String.format("{\"offset\": \"%s\"}", offset), conf.agentOffsetUrl);
+                }
+                if (!conf.agentWatermarkUrl.equals("")) {
+                    String watermark = lastRecord.get().getValueAsMap().get("watermark").getValueAsString();
+                    sendToUrl(String.format("{\"watermark\": \"%s\"}", watermark), conf.agentWatermarkUrl);
+                }
             }
         } catch (Exception ex) {
             LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex, ex);
@@ -200,20 +205,24 @@ public class AnodotTarget extends BaseTarget {
         return record;
     }
 
-    private void sendOffsetToAgent(String offset) throws Exception {
+    private void sendToUrl(String payload, String url) throws Exception {
         HttpClientCommon httpClientCommon = new HttpClientCommon(new JerseyClientConfigBean());
-        List<ConfigIssue> issues = super.init();
-        httpClientCommon.init(issues, getContext());
-        WebTarget target = httpClientCommon.getClient().target(conf.agentOffsetUrl);
-        Invocation.Builder builder = target.request();
-        MultivaluedMap<String, Object> requestHeaders = new MultivaluedHashMap<>();
-        String contentType = HttpStageUtil.getContentType(requestHeaders, DataFormat.JSON);
-        Response response = builder.method(String.valueOf(HttpMethod.POST), Entity.entity(String.format("{\"offset\": \"%s\"}", offset).getBytes(StandardCharsets.UTF_8), contentType));
+        httpClientCommon.init(super.init(), getContext());
+        Invocation.Builder builder = httpClientCommon.getClient().target(url).request();
+        Response response = builder.method(
+                String.valueOf(HttpMethod.POST),
+                Entity.entity(
+                        payload.getBytes(StandardCharsets.UTF_8),
+                        HttpStageUtil.getContentType(new MultivaluedHashMap<>(), DataFormat.JSON)
+                )
+        );
 
         try {
             if (response.getStatus() < 200 || response.getStatus() >= 300) {
                 String responseEntity = response.readEntity(String.class);
-                throw new Exception("Failed to save agent offset, response: " + responseEntity);
+                throw new Exception(
+                        String.format("Failed to send request, url: %s, response: %s", url, responseEntity)
+                );
             }
         } finally {
             response.close();
