@@ -144,11 +144,21 @@ public class AnodotTargetConfig {
           required = false,
           type = ConfigDef.Type.STRING,
           label = "Agent offset URL",
-          description = "Agent URL to send pipeline offset to",
+          description = "Agent URL to send pipeline offsets to",
           displayPosition = 100,
           group = "HTTP"
   )
   public String agentOffsetUrl = "";
+
+  @ConfigDef(
+          required = false,
+          type = ConfigDef.Type.STRING,
+          label = "Agent watermark URL",
+          description = "Agent URL to send pipeline watermarks to",
+          displayPosition = 100,
+          group = "HTTP"
+  )
+  public String agentWatermarkUrl = "";
 
   @ConfigDef(
           required = false,
