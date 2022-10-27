@@ -98,7 +98,7 @@ public class ParallelSender {
      * @return a completed future if one is available or null otherwise. Returning null may also mean that all futures were consumed (the happy path flow)
      * @throws InterruptedException if interrupted while waiting for future result to become available
      */
-    public @Nullable Future<BatchResponse> take() throws InterruptedException {
+    public @Nullable Future<BatchResponse> take() throws InterruptedException, TimeoutException {
         LOG.trace("AnodotTargetID: " + targetIdentifier + " | Trying to take completed future, pending tasks: " + pendingTasks);
 
         if(pendingTasks == 0) {
@@ -111,7 +111,7 @@ public class ParallelSender {
             --pendingTasks;
             LOG.trace("AnodotTargetID: " + targetIdentifier + " | Acquired next responseFuture, new pendingTasks: " + pendingTasks);
         } else {
-            LOG.warn("AnodotTargetID: " + targetIdentifier + " | Timed out while waiting for responseFuture, current pending tasks: " + pendingTasks);
+            throw new TimeoutException("AnodotTargetID: " + targetIdentifier + " | Timed out while waiting for responseFuture, current pending tasks: " + pendingTasks);
         }
 
         return responseFuture;

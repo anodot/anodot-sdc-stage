@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 
 /**
  * This target is an example and does not actually write to any destination.
@@ -155,6 +156,9 @@ public class AnodotTarget extends BaseTarget {
                     sendToUrl(String.format("{\"watermark\": \"%s\"}", watermark), conf.agentWatermarkUrl);
                 }
             }
+        } catch (TimeoutException ex) {
+            LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex, ex);
+            throw new RuntimeException(ex);
         } catch (Exception ex) {
             LOG.error(com.streamsets.pipeline.lib.http.Errors.HTTP_41.getMessage(), ex, ex);
             errorRecordHandler.onError(Lists.newArrayList(batch.getRecords()), new StageException(Errors.HTTP_41, ex, ex));
